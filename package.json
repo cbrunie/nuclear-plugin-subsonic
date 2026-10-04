@@ -1,0 +1,21 @@
+{
+  "name": "nuclear-plugin-subsonic",
+  "version": "0.1.0",
+  "description": "Stream your Subsonic-compatible server (Navidrome, Gonic, Airsonic…) in Nuclear",
+  "author": "cbrunie",
+  "main": "src/index.ts",
+  "type": "module",
+  "nuclear": {
+    "displayName": "Subsonic",
+    "category": "streaming",
+    "categories": ["metadata", "streaming"],
+    "permissions": ["network", "storage"]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cbrunie/nuclear-plugin-subsonic.git"
+  },
+  "dependencies": {
+    "@nuclearplayer/plugin-sdk": "^2.0.0"
+  }
+}
