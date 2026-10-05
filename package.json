@@ -12,7 +12,11 @@
       "metadata",
       "streaming"
     ],
-    "permissions": []
+    "permissions": [],
+    "icon": {
+      "type": "link",
+      "link": "https://raw.githubusercontent.com/cbrunie/nuclear-plugin-subsonic/main/icon.png"
+    }
   },
   "repository": {
     "type": "git",

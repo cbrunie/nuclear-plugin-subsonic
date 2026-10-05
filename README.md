@@ -14,3 +14,5 @@ Subsonic token authentication (`md5(password + salt)`, fresh salt each time).
 ## Setup
 
 Settings → Subsonic: server URL, username, password.
+
+Icon: the [OpenSubsonic](https://github.com/opensubsonic/open-subsonic-api) logo, Apache-2.0.
