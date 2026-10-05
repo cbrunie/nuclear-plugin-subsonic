@@ -12,10 +12,7 @@
       "metadata",
       "streaming"
     ],
-    "permissions": [
-      "network",
-      "storage"
-    ]
+    "permissions": []
   },
   "repository": {
     "type": "git",
