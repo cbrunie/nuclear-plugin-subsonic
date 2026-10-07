@@ -242,7 +242,8 @@ const createStreamingProvider = (connect: Connect): StreamingProvider => {
 };
 
 const plugin: NuclearPlugin = {
-  async onLoad(api: NuclearPluginAPI) {
+  // Nuclear only calls onEnable: settings registered in onLoad never show up.
+  async onEnable(api: NuclearPluginAPI) {
     await api.Settings.register([
       {
         id: 'url',
@@ -268,9 +269,7 @@ const plugin: NuclearPlugin = {
         widget: { type: 'password' },
       },
     ]);
-  },
 
-  onEnable(api: NuclearPluginAPI) {
     const connect = createClient(api);
     api.Providers.register(createMetadataProvider(connect));
     api.Providers.register(createStreamingProvider(connect));
