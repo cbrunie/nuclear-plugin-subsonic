@@ -52,8 +52,35 @@ export type SubsonicResponse = {
   };
   artist?: SubsonicArtist;
   album?: SubsonicAlbum;
-  artistInfo2?: { biography?: string; largeImageUrl?: string };
+  artistInfo2?: {
+    biography?: string;
+    largeImageUrl?: string;
+    similarArtist?: SubsonicArtist[];
+  };
+  albumList2?: { album?: SubsonicAlbum[] };
+  randomSongs?: { song?: SubsonicSong[] };
+  similarSongs?: { song?: SubsonicSong[] };
+  topSongs?: { song?: SubsonicSong[] };
+  starred2?: {
+    artist?: SubsonicArtist[];
+    album?: SubsonicAlbum[];
+    song?: SubsonicSong[];
+  };
+  playlists?: { playlist?: SubsonicPlaylist[] };
+  playlist?: SubsonicPlaylist;
 };
+
+export type SubsonicPlaylist = {
+  id: string;
+  name: string;
+  comment?: string;
+  coverArt?: string;
+  created?: string;
+  changed?: string;
+  entry?: SubsonicSong[];
+};
+
+export type AlbumListType = 'newest' | 'frequent' | 'recent' | 'random';
 
 type Params = Record<string, string | number>;
 
@@ -107,8 +134,7 @@ export const createClient = (api: NuclearPluginAPI) => async () => {
       throw new Error(`Subsonic ${endpoint}: HTTP ${response.status}`);
     }
     const body = (await response.json())['subsonic-response'] as
-      | SubsonicResponse
-      | undefined;
+      SubsonicResponse | undefined;
     if (!body) {
       throw new Error(`Subsonic ${endpoint}: not a Subsonic server`);
     }
@@ -130,5 +156,18 @@ export const createClient = (api: NuclearPluginAPI) => async () => {
     getArtistInfo: async (id: string) =>
       (await call('getArtistInfo2', { id })).artistInfo2,
     getAlbum: async (id: string) => (await call('getAlbum', { id })).album,
+    getAlbumList: async (type: AlbumListType, size: number) =>
+      (await call('getAlbumList2', { type, size })).albumList2?.album ?? [],
+    getRandomSongs: async (size: number) =>
+      (await call('getRandomSongs', { size })).randomSongs?.song ?? [],
+    getSimilarSongs: async (id: string, count: number) =>
+      (await call('getSimilarSongs', { id, count })).similarSongs?.song ?? [],
+    getTopSongs: async (artist: string, count: number) =>
+      (await call('getTopSongs', { artist, count })).topSongs?.song ?? [],
+    getStarred: async () => (await call('getStarred2')).starred2 ?? {},
+    getPlaylists: async () =>
+      (await call('getPlaylists')).playlists?.playlist ?? [],
+    getPlaylist: async (id: string) =>
+      (await call('getPlaylist', { id })).playlist,
   };
 };

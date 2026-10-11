@@ -4,9 +4,14 @@ import type {
   ArtistBio,
   ArtistRef,
   ArtworkSet,
+  DashboardProvider,
+  DiscoveryProvider,
   MetadataProvider,
   NuclearPlugin,
   NuclearPluginAPI,
+  Playlist,
+  PlaylistProvider,
+  PlaylistRef,
   SearchParams,
   Stream,
   StreamCandidate,
@@ -19,6 +24,7 @@ import {
   createClient,
   type SubsonicAlbum,
   type SubsonicArtist,
+  type SubsonicPlaylist,
   type SubsonicSong,
   type UrlBuilder,
 } from './subsonic';
@@ -26,17 +32,25 @@ import {
 const CATEGORY = 'Subsonic';
 const METADATA_PROVIDER_ID = 'subsonic';
 const STREAMING_PROVIDER_ID = 'subsonic-stream';
+const DASHBOARD_PROVIDER_ID = 'subsonic-dashboard';
+const PLAYLIST_PROVIDER_ID = 'subsonic-playlists';
+const DISCOVERY_PROVIDER_ID = 'subsonic-discovery';
 const DEFAULT_SEARCH_LIMIT = 20;
 const STREAMING_SEARCH_LIMIT = 5;
+const DASHBOARD_SIZE = 20;
+const DASHBOARD_ARTISTS = 12;
+const ARTIST_TOP_TRACKS = 10;
+const DISCOVERY_LIMIT = 20;
+
+// Nuclear opens a dashboard playlist through the playlist provider that
+// matches its URL: server playlists get a URL of their own.
+const PLAYLIST_URL_PREFIX = 'subsonic://playlist/';
 
 type Connect = ReturnType<typeof createClient>;
 
 const source = (provider: string, id: string) => ({ provider, id });
 
-const artwork = (
-  url: UrlBuilder,
-  coverArt?: string,
-): ArtworkSet | undefined =>
+const artwork = (url: UrlBuilder, coverArt?: string): ArtworkSet | undefined =>
   coverArt
     ? {
         items: [
@@ -113,6 +127,38 @@ const candidate = (url: UrlBuilder, song: SubsonicSong): StreamCandidate => ({
   source: source(STREAMING_PROVIDER_ID, song.id),
 });
 
+const playlistRef = (
+  url: UrlBuilder,
+  playlist: SubsonicPlaylist,
+): PlaylistRef => ({
+  id: playlist.id,
+  name: playlist.name,
+  artwork: artwork(url, playlist.coverArt),
+  source: {
+    ...source(PLAYLIST_PROVIDER_ID, playlist.id),
+    url: PLAYLIST_URL_PREFIX + playlist.id,
+  },
+});
+
+const playlist = (url: UrlBuilder, list: SubsonicPlaylist): Playlist => {
+  const created = list.created ?? new Date().toISOString();
+  return {
+    id: list.id,
+    name: list.name,
+    description: list.comment,
+    artwork: artwork(url, list.coverArt),
+    createdAtIso: created,
+    lastModifiedIso: list.changed ?? created,
+    isReadOnly: true,
+    origin: source(PLAYLIST_PROVIDER_ID, list.id),
+    items: (list.entry ?? []).map((song, index) => ({
+      id: `${list.id}-${index}`,
+      track: track(url, song),
+      addedAtIso: created,
+    })),
+  };
+};
+
 const searchOnly = (
   kind: 'artistCount' | 'albumCount' | 'songCount',
   limit: number,
@@ -124,7 +170,12 @@ const createMetadataProvider = (connect: Connect): MetadataProvider => ({
   name: 'Subsonic',
   streamingProviderId: STREAMING_PROVIDER_ID,
   searchCapabilities: ['artists', 'albums', 'tracks'],
-  artistMetadataCapabilities: ['artistBio', 'artistAlbums'],
+  artistMetadataCapabilities: [
+    'artistBio',
+    'artistAlbums',
+    'artistTopTracks',
+    'artistRelatedArtists',
+  ],
   albumMetadataCapabilities: ['albumDetails'],
 
   searchArtists: async ({ query, limit }: Omit<SearchParams, 'types'>) => {
@@ -174,6 +225,27 @@ const createMetadataProvider = (connect: Connect): MetadataProvider => ({
     const client = await connect();
     const artist = await client.getArtist(artistId);
     return (artist?.album ?? []).map((a) => albumRef(client.url, a));
+  },
+
+  // Top songs and similar artists rely on the server's external agents
+  // (Last.fm…): empty when it has none.
+  fetchArtistTopTracks: async (artistId: string): Promise<TrackRef[]> => {
+    const client = await connect();
+    const artist = await client.getArtist(artistId);
+    if (!artist) {
+      return [];
+    }
+    const songs = await client.getTopSongs(artist.name, ARTIST_TOP_TRACKS);
+    return songs.map((s) => trackRef(client.url, s));
+  },
+
+  fetchArtistRelatedArtists: async (artistId: string): Promise<ArtistRef[]> => {
+    const client = await connect();
+    const info = await client.getArtistInfo(artistId);
+    // Only artists present in the library have an id to open.
+    return (info?.similarArtist ?? [])
+      .filter((a) => a.id)
+      .map((a) => artistRef(client.url, a));
   },
 
   fetchAlbumDetails: async (albumId: string): Promise<Album> => {
@@ -241,6 +313,96 @@ const createStreamingProvider = (connect: Connect): StreamingProvider => {
   };
 };
 
+const createDashboardProvider = (connect: Connect): DashboardProvider => ({
+  id: DASHBOARD_PROVIDER_ID,
+  kind: 'dashboard',
+  name: 'Subsonic',
+  metadataProviderId: METADATA_PROVIDER_ID,
+  capabilities: [
+    'topTracks',
+    'topArtists',
+    'topAlbums',
+    'editorialPlaylists',
+    'newReleases',
+  ],
+
+  // Starred songs: the closest thing to "top tracks" a Subsonic server keeps.
+  fetchTopTracks: async () => {
+    const client = await connect();
+    const starred = await client.getStarred();
+    return (starred.song ?? []).map((s) => track(client.url, s));
+  },
+
+  // Artists of the most played albums, in play order.
+  fetchTopArtists: async () => {
+    const client = await connect();
+    const albums = await client.getAlbumList('frequent', DASHBOARD_SIZE * 2);
+    const ids = [
+      ...new Set(albums.map((a) => a.artistId).filter(Boolean)),
+    ].slice(0, DASHBOARD_ARTISTS) as string[];
+    const artists = await Promise.all(ids.map((id) => client.getArtist(id)));
+    return artists
+      .filter((a): a is SubsonicArtist => Boolean(a))
+      .map((a) => artistRef(client.url, a));
+  },
+
+  fetchTopAlbums: async () => {
+    const client = await connect();
+    const albums = await client.getAlbumList('frequent', DASHBOARD_SIZE);
+    return albums.map((a) => albumRef(client.url, a));
+  },
+
+  fetchEditorialPlaylists: async () => {
+    const client = await connect();
+    const lists = await client.getPlaylists();
+    return lists.map((p) => playlistRef(client.url, p));
+  },
+
+  // Recently added to the library.
+  fetchNewReleases: async () => {
+    const client = await connect();
+    const albums = await client.getAlbumList('newest', DASHBOARD_SIZE);
+    return albums.map((a) => albumRef(client.url, a));
+  },
+});
+
+const createPlaylistProvider = (connect: Connect): PlaylistProvider => ({
+  id: PLAYLIST_PROVIDER_ID,
+  kind: 'playlists',
+  name: 'Subsonic',
+  matchesUrl: (url: string) => url.startsWith(PLAYLIST_URL_PREFIX),
+  fetchPlaylistByUrl: async (url: string) => {
+    const client = await connect();
+    const id = url.slice(PLAYLIST_URL_PREFIX.length);
+    const list = await client.getPlaylist(id);
+    if (!list) {
+      throw new Error(`Subsonic: playlist ${id} not found`);
+    }
+    return playlist(client.url, list);
+  },
+});
+
+const createDiscoveryProvider = (connect: Connect): DiscoveryProvider => ({
+  id: DISCOVERY_PROVIDER_ID,
+  kind: 'discovery',
+  name: 'Subsonic',
+  // Songs similar to the last one from this server, random ones otherwise.
+  getRecommendations: async (context: Track[], { limit }) => {
+    const client = await connect();
+    const count = limit ?? DISCOVERY_LIMIT;
+    const seed = context
+      .filter((t) => t.source.provider === METADATA_PROVIDER_ID)
+      .at(-1);
+    const similar = seed
+      ? await client.getSimilarSongs(seed.source.id, count).catch(() => [])
+      : [];
+    const played = new Set(context.map((t) => t.source.id));
+    const fresh = similar.filter((s) => !played.has(s.id));
+    const songs = fresh.length ? fresh : await client.getRandomSongs(count);
+    return songs.map((s) => track(client.url, s));
+  },
+});
+
 const plugin: NuclearPlugin = {
   // Nuclear only calls onEnable: settings registered in onLoad never show up.
   async onEnable(api: NuclearPluginAPI) {
@@ -273,11 +435,17 @@ const plugin: NuclearPlugin = {
     const connect = createClient(api);
     api.Providers.register(createMetadataProvider(connect));
     api.Providers.register(createStreamingProvider(connect));
+    api.Providers.register(createDashboardProvider(connect));
+    api.Providers.register(createPlaylistProvider(connect));
+    api.Providers.register(createDiscoveryProvider(connect));
   },
 
   onDisable(api: NuclearPluginAPI) {
     api.Providers.unregister(METADATA_PROVIDER_ID);
     api.Providers.unregister(STREAMING_PROVIDER_ID);
+    api.Providers.unregister(DASHBOARD_PROVIDER_ID);
+    api.Providers.unregister(PLAYLIST_PROVIDER_ID);
+    api.Providers.unregister(DISCOVERY_PROVIDER_ID);
   },
 };
 
