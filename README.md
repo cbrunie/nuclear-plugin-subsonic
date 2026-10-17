@@ -19,6 +19,9 @@ Search and stream your own library from any Subsonic-compatible server
 - Favorites synced both ways with the server's starred items
 - Play queue saved on the server, to resume it from another client; an
   empty queue is restored from it at startup
+- Scrobbling to the server: now playing, and a listen when a song plays to
+  the end (skipped songs are not counted); the server updates its play
+  counts and forwards them wherever it is set up to (Last.fm, ListenBrainz…)
 
 The password never leaves your machine in clear: every request uses
 Subsonic token authentication (`md5(password + salt)`, fresh salt each time).
@@ -35,7 +38,7 @@ Used when the server announces them, with a plain Subsonic fallback:
 
 ## Setup
 
-Settings → Subsonic: server URL, username, password. Bitrate, format and
-both syncs are in the same section.
+Settings → Subsonic: server URL, username, password. Bitrate, format,
+both syncs and scrobbling are in the same section.
 
 Icon: the [OpenSubsonic](https://github.com/opensubsonic/open-subsonic-api) logo, Apache-2.0.

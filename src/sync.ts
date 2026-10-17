@@ -2,6 +2,7 @@ import type {
   FavoritesData,
   NuclearPluginAPI,
   Queue,
+  Track,
 } from '@nuclearplayer/plugin-sdk';
 
 import { PLAY_QUEUE_SAVE_DELAY_MS, SETTINGS } from './config';
@@ -154,4 +155,48 @@ export const startPlayQueueSync = async (
     clearTimeout(timer);
     unsubscribers.forEach((unsubscribe) => unsubscribe());
   };
+};
+
+// Now playing when a song from this server starts, a listen when it plays
+// to the end. Skipped songs are not counted.
+export const startScrobbling = async (
+  api: NuclearPluginAPI,
+  connect: Connect,
+): Promise<Unsubscribe> => {
+  const startedAt = new Map<string, number>();
+
+  const report = async (t: Track, submission: boolean) => {
+    if (
+      !isFromServer(t) ||
+      (await api.Settings.get<boolean>(SETTINGS.SCROBBLE)) === false
+    ) {
+      return;
+    }
+    try {
+      const client = await connect();
+      await client.scrobble(
+        t.source.id,
+        submission,
+        submission ? startedAt.get(t.source.id) : undefined,
+      );
+    } catch (error) {
+      api.Logger.warn(`Subsonic: scrobble failed: ${String(error)}`);
+    }
+  };
+
+  const unsubscribers = [
+    api.Events.on('trackStarted', async (t) => {
+      // Nuclear also emits trackStarted when resuming: keep the first start.
+      if (!startedAt.has(t.source.id)) {
+        startedAt.clear();
+        startedAt.set(t.source.id, Date.now());
+      }
+      await report(t, false);
+    }),
+    api.Events.on('trackFinished', async (t) => {
+      await report(t, true);
+      startedAt.delete(t.source.id);
+    }),
+  ];
+  return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
 };

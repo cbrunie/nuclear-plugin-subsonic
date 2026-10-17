@@ -21,7 +21,11 @@ import {
   createStreamingProvider,
 } from './providers';
 import { createClient } from './subsonic';
-import { startFavoritesSync, startPlayQueueSync } from './sync';
+import {
+  startFavoritesSync,
+  startPlayQueueSync,
+  startScrobbling,
+} from './sync';
 
 let cleanups: (() => void)[] = [];
 
@@ -40,7 +44,11 @@ const plugin: NuclearPlugin = {
 
     // In the background: an unreachable or unconfigured server must not
     // keep the plugin from enabling.
-    for (const start of [startFavoritesSync, startPlayQueueSync]) {
+    for (const start of [
+      startFavoritesSync,
+      startPlayQueueSync,
+      startScrobbling,
+    ]) {
       start(api, connect)
         .then((cleanup) => cleanups.push(cleanup))
         .catch((error) =>

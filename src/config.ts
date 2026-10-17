@@ -27,6 +27,7 @@ export const SETTINGS = {
   FORMAT: 'format',
   SYNC_FAVORITES: 'syncFavorites',
   SYNC_PLAY_QUEUE: 'syncPlayQueue',
+  SCROBBLE: 'scrobble',
 } as const;
 
 const CATEGORY = 'Subsonic';
@@ -102,6 +103,16 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     title: 'Sync play queue',
     description:
       'Saves the queue on the server, to resume it from another client. An empty queue is restored from it at startup.',
+    category: CATEGORY,
+    kind: 'boolean',
+    default: true,
+    widget: { type: 'toggle' },
+  },
+  {
+    id: SETTINGS.SCROBBLE,
+    title: 'Scrobble',
+    description:
+      'Reports now playing and finished songs to the server: play counts, and whatever it forwards them to (Last.fm, ListenBrainz…).',
     category: CATEGORY,
     kind: 'boolean',
     default: true,

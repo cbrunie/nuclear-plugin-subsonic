@@ -282,6 +282,10 @@ export const createClient = (api: NuclearPluginAPI) => async () => {
         : undefined,
     getLyrics: async (artist: string, title: string) =>
       (await call('getLyrics', { artist, title })).lyrics?.value,
+    // submission=false: now playing; true: a listen, with its start time.
+    scrobble: async (id: string, submission: boolean, time?: number) => {
+      await call('scrobble', { id, submission: String(submission), time });
+    },
     getPlayQueue: async () => (await call('getPlayQueue')).playQueue,
     savePlayQueue: async (ids: string[], current: string, position: number) => {
       if (supports('formPost')) {
