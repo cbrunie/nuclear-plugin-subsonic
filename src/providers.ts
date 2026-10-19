@@ -114,10 +114,14 @@ export const createMetadataProvider = (connect: Connect): MetadataProvider => ({
     }
     // The biography depends on the server's own external agents: optional.
     const info = await client.getArtistInfo(artistId).catch(() => undefined);
+    // No cover art on the server: fall back on the external agent's image.
+    const image = info?.largeImageUrl;
     return {
       name: artist.name,
       bio: info?.biography || undefined,
-      artwork: artwork(client.url, artist.coverArt),
+      artwork:
+        artwork(client.url, artist.coverArt) ??
+        (image ? { items: [{ url: image, purpose: 'avatar' }] } : undefined),
       source: source(METADATA_PROVIDER_ID, artist.id),
     };
   },
@@ -305,14 +309,25 @@ export const createDiscoveryProvider = (
   id: DISCOVERY_PROVIDER_ID,
   kind: 'discovery',
   name: 'Subsonic',
-  // Songs similar to the last one from this server, random ones otherwise.
+  // Songs similar to the last one from this server; else similar to the last
+  // artist played, when the library has them; random ones otherwise.
   getRecommendations: async (context: Track[], { limit }) => {
     const client = await connect();
     const count = limit ?? DISCOVERY_LIMIT;
-    const seed = context.filter(isFromServer).at(-1);
-    const similar = seed
-      ? await client.getSimilarSongs(seed.source.id, count).catch(() => [])
-      : [];
+    const similarToContext = async () => {
+      const seed = context.filter(isFromServer).at(-1);
+      if (seed) {
+        return client.getSimilarSongs(seed.source.id, count);
+      }
+      const name = context.at(-1)?.artists[0]?.name;
+      if (!name) {
+        return [];
+      }
+      const found = await client.search(name, searchOnly('artistCount', 5));
+      const artist = found.artist?.find((a) => sameText(a.name, name));
+      return artist ? client.getSimilarSongsByArtist(artist.id, count) : [];
+    };
+    const similar = await similarToContext().catch(() => []);
     const played = new Set(context.map((t) => t.source.id));
     const fresh = similar.filter((s) => !played.has(s.id));
     const songs = fresh.length ? fresh : await client.getRandomSongs(count);

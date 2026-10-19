@@ -13,9 +13,14 @@ Search and stream your own library from any Subsonic-compatible server
   otherwise
 - Dashboard: most played albums and their artists, recently added albums,
   starred songs and your server playlists
-- Server playlists open in Nuclear and can be imported
-- Discovery: similar songs from your library to keep the queue going,
-  random ones when the server knows no similar songs
+- Playlists synced both ways: your server playlists appear in Nuclear, and
+  Nuclear playlists holding songs from the server are kept on it, edits,
+  renames and deletions included. Songs from other sources stay in Nuclear
+  only. When both sides changed, Nuclear wins; a playlist is deleted on the
+  server only when you delete it in Nuclear while the plugin runs
+- Discovery: songs similar to the last one played, or to its artist when it
+  came from another source, from your library; random ones when the server
+  knows none
 - Favorites synced both ways with the server's starred items
 - Play queue saved on the server, to resume it from another client; an
   empty queue is restored from it at startup
@@ -39,6 +44,6 @@ Used when the server announces them, with a plain Subsonic fallback:
 ## Setup
 
 Settings → Subsonic: server URL, username, password. Bitrate, format,
-both syncs and scrobbling are in the same section.
+the syncs and scrobbling are in the same section.
 
 Icon: the [OpenSubsonic](https://github.com/opensubsonic/open-subsonic-api) logo, Apache-2.0.

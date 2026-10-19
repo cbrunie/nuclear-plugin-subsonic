@@ -51,6 +51,7 @@ export type SubsonicPlaylist = {
   coverArt?: string;
   created?: string;
   changed?: string;
+  owner?: string;
   entry?: SubsonicSong[];
 };
 
@@ -90,6 +91,7 @@ export type SubsonicResponse = {
   albumList2?: { album?: SubsonicAlbum[] };
   randomSongs?: { song?: SubsonicSong[] };
   similarSongs?: { song?: SubsonicSong[] };
+  similarSongs2?: { song?: SubsonicSong[] };
   topSongs?: { song?: SubsonicSong[] };
   starred2?: {
     artist?: SubsonicArtist[];
@@ -231,8 +233,14 @@ export const createClient = (api: NuclearPluginAPI) => async () => {
   const supports = (name: string, version = 1) =>
     extensions.get(name)?.includes(version) ?? false;
 
+  // Long lists (playlists, queues) go in a POST body when the server takes
+  // one; a URL too long for a plain server fails rather than truncating.
+  const send = (endpoint: string, params: Params) =>
+    supports('formPost') ? post(endpoint, params) : call(endpoint, params);
+
   return {
     url,
+    username,
     supports,
     search: async (
       query: string,
@@ -249,6 +257,9 @@ export const createClient = (api: NuclearPluginAPI) => async () => {
     getSimilarSongs: async (id: string, count: number) =>
       (await call('getSimilarSongs', { id, count })).similarSongs?.song ?? [],
     // By id when the server allows it, by name (ambiguous) otherwise.
+    getSimilarSongsByArtist: async (artistId: string, count: number) =>
+      (await call('getSimilarSongs2', { id: artistId, count })).similarSongs2
+        ?.song ?? [],
     getTopSongs: async (artist: SubsonicArtist, count: number) =>
       (
         await call(
@@ -269,6 +280,18 @@ export const createClient = (api: NuclearPluginAPI) => async () => {
       (await call('getPlaylists')).playlists?.playlist ?? [],
     getPlaylist: async (id: string) =>
       (await call('getPlaylist', { id })).playlist,
+    createPlaylist: async (name: string, songIds: string[]) =>
+      (await send('createPlaylist', { name, songId: songIds })).playlist,
+    // createPlaylist with a playlistId replaces the whole song list.
+    replacePlaylistSongs: async (id: string, songIds: string[]) => {
+      await send('createPlaylist', { playlistId: id, songId: songIds });
+    },
+    renamePlaylist: async (id: string, name: string) => {
+      await call('updatePlaylist', { playlistId: id, name });
+    },
+    deletePlaylist: async (id: string) => {
+      await call('deletePlaylist', { id });
+    },
     // Structured (synced) lyrics need the songLyrics extension; version 2
     // adds word-level timing.
     getStructuredLyrics: async (id: string) =>

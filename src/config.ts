@@ -14,6 +14,9 @@ export const DASHBOARD_ARTISTS = 12;
 export const ARTIST_TOP_TRACKS = 10;
 export const DISCOVERY_LIMIT = 20;
 export const PLAY_QUEUE_SAVE_DELAY_MS = 3000;
+export const PLAYLIST_SYNC_DELAY_MS = 2000;
+// Changes made on the server by other clients are picked up this often.
+export const PLAYLIST_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 // Nuclear opens a dashboard playlist through the playlist provider that
 // matches its URL: server playlists get a URL of their own.
@@ -28,6 +31,8 @@ export const SETTINGS = {
   SYNC_FAVORITES: 'syncFavorites',
   SYNC_PLAY_QUEUE: 'syncPlayQueue',
   SCROBBLE: 'scrobble',
+  SYNC_PLAYLISTS: 'syncPlaylists',
+  PLAYLIST_LINKS: 'playlistLinks',
 } as const;
 
 const CATEGORY = 'Subsonic';
@@ -107,6 +112,25 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     kind: 'boolean',
     default: true,
     widget: { type: 'toggle' },
+  },
+  {
+    id: SETTINGS.SYNC_PLAYLISTS,
+    title: 'Sync playlists',
+    description:
+      'Your server playlists appear in Nuclear, and Nuclear playlists holding songs from this server are kept on it (other songs stay in Nuclear only).',
+    category: CATEGORY,
+    kind: 'boolean',
+    default: true,
+    widget: { type: 'toggle' },
+  },
+  {
+    // Which Nuclear playlist is which server playlist: internal state.
+    id: SETTINGS.PLAYLIST_LINKS,
+    title: 'Playlist links',
+    category: CATEGORY,
+    kind: 'string',
+    default: '[]',
+    hidden: true,
   },
   {
     id: SETTINGS.SCROBBLE,

@@ -23,6 +23,7 @@ import {
 import { createClient } from './subsonic';
 import {
   startFavoritesSync,
+  startPlaylistSync,
   startPlayQueueSync,
   startScrobbling,
 } from './sync';
@@ -48,6 +49,7 @@ const plugin: NuclearPlugin = {
       startFavoritesSync,
       startPlayQueueSync,
       startScrobbling,
+      startPlaylistSync,
     ]) {
       start(api, connect)
         .then((cleanup) => cleanups.push(cleanup))

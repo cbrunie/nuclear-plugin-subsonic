@@ -1,12 +1,21 @@
 import type {
   FavoritesData,
   NuclearPluginAPI,
+  Playlist,
+  PlaylistIndexEntry,
   Queue,
   Track,
 } from '@nuclearplayer/plugin-sdk';
 
-import { PLAY_QUEUE_SAVE_DELAY_MS, SETTINGS } from './config';
-import { albumRef, artistRef, isFromServer, track } from './mappers';
+import {
+  PLAY_QUEUE_SAVE_DELAY_MS,
+  PLAYLIST_SYNC_DELAY_MS,
+  PLAYLIST_SYNC_INTERVAL_MS,
+  PLAYLIST_URL_PREFIX,
+  SETTINGS,
+} from './config';
+import { albumRef, artistRef, isFromServer, playlist, track } from './mappers';
+import { planPlaylistSync, type PlaylistLink } from './playlistSync';
 import type { Connect } from './providers';
 import type { StarTarget } from './subsonic';
 
@@ -199,4 +208,215 @@ export const startScrobbling = async (
     }),
   ];
   return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+};
+
+const originServerId = (playlist: Playlist) =>
+  playlist.origin?.url?.startsWith(PLAYLIST_URL_PREFIX)
+    ? playlist.origin.url.slice(PLAYLIST_URL_PREFIX.length)
+    : undefined;
+
+const serverSongIds = (playlist: Playlist) =>
+  playlist.items
+    .filter((item) => isFromServer(item.track))
+    .map((item) => item.track.source.id);
+
+// Server playlists appear in Nuclear; Nuclear playlists holding songs from
+// this server are kept on it. The rules are in playlistSync.ts.
+export const startPlaylistSync = async (
+  api: NuclearPluginAPI,
+  connect: Connect,
+): Promise<Unsubscribe> => {
+  const enabled = async () =>
+    (await api.Settings.get<boolean>(SETTINGS.SYNC_PLAYLISTS)) !== false;
+  const loadLinks = async (): Promise<PlaylistLink[]> =>
+    JSON.parse(
+      (await api.Settings.get<string>(SETTINGS.PLAYLIST_LINKS)) || '[]',
+    );
+  const modifiedOf = async (nuclearId: string) =>
+    (await api.Playlists.getIndex()).find((e) => e.id === nuclearId)
+      ?.lastModifiedIso ?? '';
+
+  let vanished = new Set<string>();
+  let previousIds = new Set(
+    (await api.Playlists.getIndex()).map((entry) => entry.id),
+  );
+
+  const sync = async () => {
+    if (!(await enabled())) {
+      return;
+    }
+    const client = await connect();
+    const serverLists = (await client.getPlaylists()).filter(
+      // Other users' public playlists cannot be edited.
+      (p) => !p.owner || p.owner === client.username,
+    );
+    const index = await api.Playlists.getIndex();
+    const nuclearLists = (
+      await Promise.all(index.map((e) => api.Playlists.getPlaylist(e.id)))
+    ).filter((p): p is Playlist => Boolean(p));
+    const nuclearById = new Map(nuclearLists.map((p) => [p.id, p]));
+
+    const toDelete = vanished;
+    vanished = new Set();
+    const actions = planPlaylistSync({
+      links: await loadLinks(),
+      nuclear: nuclearLists.map((p) => ({
+        id: p.id,
+        modified: p.lastModifiedIso,
+        originServerId: originServerId(p),
+        hasServerTracks: serverSongIds(p).length > 0,
+      })),
+      server: serverLists.map((p) => ({ id: p.id, changed: p.changed })),
+      vanished: toDelete,
+    });
+    if (!actions.length) {
+      return;
+    }
+
+    let links = await loadLinks();
+    const drop = (l: PlaylistLink) => {
+      links = links.filter((x) => x.nuclearId !== l.nuclearId);
+    };
+    const keep = async (nuclearId: string, serverId: string) => {
+      drop({ nuclearId, serverId } as PlaylistLink);
+      links.push({
+        nuclearId,
+        serverId,
+        nuclearModified: await modifiedOf(nuclearId),
+        serverChanged: (await client.getPlaylist(serverId))?.changed,
+      });
+    };
+
+    for (const action of actions) {
+      try {
+        switch (action.type) {
+          case 'unlink':
+            drop(action.link);
+            break;
+          case 'deleteOnServer':
+            await client.deletePlaylist(action.link.serverId);
+            drop(action.link);
+            break;
+          case 'deleteInNuclear':
+            await api.Playlists.deletePlaylist(action.link.nuclearId);
+            drop(action.link);
+            break;
+          case 'push': {
+            const local = nuclearById.get(action.link.nuclearId)!;
+            const remote = serverLists.find(
+              (p) => p.id === action.link.serverId,
+            );
+            await client.replacePlaylistSongs(
+              action.link.serverId,
+              serverSongIds(local),
+            );
+            if (remote && remote.name !== local.name) {
+              await client.renamePlaylist(action.link.serverId, local.name);
+            }
+            await keep(action.link.nuclearId, action.link.serverId);
+            break;
+          }
+          case 'pull': {
+            // Songs from other sources stay, after the server's.
+            const local = nuclearById.get(action.link.nuclearId)!;
+            const remote = await client.getPlaylist(action.link.serverId);
+            const others = local.items.filter((i) => !isFromServer(i.track));
+            await api.Playlists.removeTracks(
+              local.id,
+              local.items.map((i) => i.id),
+            );
+            await api.Playlists.addTracks(local.id, [
+              ...(remote?.entry ?? []).map((s) => track(client.url, s)),
+              ...others.map((i) => i.track),
+            ]);
+            await keep(local.id, action.link.serverId);
+            break;
+          }
+          case 'link':
+            await keep(action.nuclearId, action.serverId);
+            break;
+          case 'createOnServer': {
+            const local = nuclearById.get(action.nuclearId)!;
+            const created = await client.createPlaylist(
+              local.name,
+              serverSongIds(local),
+            );
+            // Servers older than API 1.14 do not return the playlist.
+            const serverId =
+              created?.id ??
+              (await client.getPlaylists())
+                .filter((p) => p.name === local.name)
+                .sort((a, b) =>
+                  (b.created ?? '').localeCompare(a.created ?? ''),
+                )[0]?.id;
+            if (serverId) {
+              await keep(local.id, serverId);
+            }
+            break;
+          }
+          case 'importFromServer': {
+            const remote = await client.getPlaylist(action.serverId);
+            if (remote) {
+              const nuclearId = await api.Playlists.importPlaylist({
+                ...playlist(client.url, remote),
+                isReadOnly: false,
+              });
+              await keep(nuclearId, action.serverId);
+            }
+            break;
+          }
+        }
+      } catch (error) {
+        api.Logger.warn(
+          `Subsonic: playlist sync, ${action.type} failed: ${String(error)}`,
+        );
+      }
+    }
+    await api.Settings.set(SETTINGS.PLAYLIST_LINKS, JSON.stringify(links));
+    previousIds = new Set(
+      (await api.Playlists.getIndex()).map((entry) => entry.id),
+    );
+  };
+
+  // One sync at a time; a request during a sync runs once it ends.
+  let running: Promise<void> = Promise.resolve();
+  const run = () => {
+    running = running
+      .then(sync)
+      .catch((error) =>
+        api.Logger.warn(`Subsonic: playlist sync failed: ${String(error)}`),
+      );
+  };
+
+  // Loading a playlist notifies too: only a changed index triggers a sync,
+  // or syncing would trigger itself forever.
+  const signature = (index: PlaylistIndexEntry[]) =>
+    JSON.stringify(index.map((e) => [e.id, e.name, e.lastModifiedIso]));
+  let lastSignature = signature(await api.Playlists.getIndex());
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const unsubscribe = api.Playlists.subscribe((index) => {
+    const current = signature(index);
+    if (current === lastSignature) {
+      return;
+    }
+    lastSignature = current;
+    const ids = new Set(index.map((entry) => entry.id));
+    for (const id of previousIds) {
+      if (!ids.has(id)) {
+        vanished.add(id);
+      }
+    }
+    previousIds = ids;
+    clearTimeout(timer);
+    timer = setTimeout(run, PLAYLIST_SYNC_DELAY_MS);
+  });
+  const interval = setInterval(run, PLAYLIST_SYNC_INTERVAL_MS);
+  run();
+
+  return () => {
+    clearTimeout(timer);
+    clearInterval(interval);
+    unsubscribe();
+  };
 };
