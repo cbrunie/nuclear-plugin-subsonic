@@ -74,6 +74,10 @@ export type StructuredLyrics = {
 
 export type SubsonicResponse = {
   status: 'ok' | 'failed';
+  version?: string;
+  // OpenSubsonic servers name themselves.
+  type?: string;
+  serverVersion?: string;
   error?: { code: number; message: string };
   openSubsonicExtensions?: { name: string; versions: number[] }[];
   searchResult3?: {
@@ -241,7 +245,10 @@ export const createClient = (api: NuclearPluginAPI) => async () => {
   return {
     url,
     username,
+    account: cacheKey,
     supports,
+    extensionNames: [...extensions.keys()],
+    ping: () => call('ping'),
     search: async (
       query: string,
       counts: { artistCount?: number; albumCount?: number; songCount?: number },

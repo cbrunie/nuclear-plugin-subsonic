@@ -43,7 +43,10 @@ Used when the server announces them, with a plain Subsonic fallback:
 
 ## Setup
 
-Settings → Subsonic: server URL, username, password. Bitrate, format,
-the syncs and scrobbling are in the same section.
+Settings → Subsonic: server URL, username, password, then **Test
+connection**: it shows the server, its version and the OpenSubsonic
+extensions it supports, or what is wrong. Bitrate, format, the syncs and
+scrobbling are in the same section. The syncs start as soon as the
+credentials are filled in, no need to re-enable the plugin.
 
 Icon: the [OpenSubsonic](https://github.com/opensubsonic/open-subsonic-api) logo, Apache-2.0.

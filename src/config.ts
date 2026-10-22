@@ -1,5 +1,7 @@
 import type { SettingDefinition } from '@nuclearplayer/plugin-sdk';
 
+export const CONNECTION_TEST_WIDGET = 'connection-test';
+
 export const METADATA_PROVIDER_ID = 'subsonic';
 export const STREAMING_PROVIDER_ID = 'subsonic-stream';
 export const DASHBOARD_PROVIDER_ID = 'subsonic-dashboard';
@@ -33,6 +35,7 @@ export const SETTINGS = {
   SCROBBLE: 'scrobble',
   SYNC_PLAYLISTS: 'syncPlaylists',
   PLAYLIST_LINKS: 'playlistLinks',
+  CONNECTION_TEST: 'connectionTest',
 } as const;
 
 const CATEGORY = 'Subsonic';
@@ -61,6 +64,15 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     category: CATEGORY,
     kind: 'string',
     widget: { type: 'password' },
+  },
+  {
+    id: SETTINGS.CONNECTION_TEST,
+    title: 'Connection',
+    description: 'Checks the URL and credentials above.',
+    category: CATEGORY,
+    kind: 'custom',
+    widgetId: CONNECTION_TEST_WIDGET,
+    default: null,
   },
   {
     id: SETTINGS.MAX_BIT_RATE,
@@ -129,7 +141,7 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     title: 'Playlist links',
     category: CATEGORY,
     kind: 'string',
-    default: '[]',
+    default: '{}',
     hidden: true,
   },
   {

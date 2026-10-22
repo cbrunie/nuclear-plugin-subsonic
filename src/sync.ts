@@ -228,9 +228,20 @@ export const startPlaylistSync = async (
 ): Promise<Unsubscribe> => {
   const enabled = async () =>
     (await api.Settings.get<boolean>(SETTINGS.SYNC_PLAYLISTS)) !== false;
-  const loadLinks = async (): Promise<PlaylistLink[]> =>
-    JSON.parse(
-      (await api.Settings.get<string>(SETTINGS.PLAYLIST_LINKS)) || '[]',
+  // Links belong to one account: switching server or user must not make
+  // the other account's playlists look deleted.
+  const allLinks = async (): Promise<Record<string, PlaylistLink[]>> => {
+    const stored = JSON.parse(
+      (await api.Settings.get<string>(SETTINGS.PLAYLIST_LINKS)) || '{}',
+    );
+    return Array.isArray(stored) ? {} : stored;
+  };
+  const loadLinks = async (account: string) =>
+    (await allLinks())[account] ?? [];
+  const saveLinks = async (account: string, links: PlaylistLink[]) =>
+    api.Settings.set(
+      SETTINGS.PLAYLIST_LINKS,
+      JSON.stringify({ ...(await allLinks()), [account]: links }),
     );
   const modifiedOf = async (nuclearId: string) =>
     (await api.Playlists.getIndex()).find((e) => e.id === nuclearId)
@@ -246,6 +257,7 @@ export const startPlaylistSync = async (
       return;
     }
     const client = await connect();
+    const account = client.account;
     const serverLists = (await client.getPlaylists()).filter(
       // Other users' public playlists cannot be edited.
       (p) => !p.owner || p.owner === client.username,
@@ -259,7 +271,7 @@ export const startPlaylistSync = async (
     const toDelete = vanished;
     vanished = new Set();
     const actions = planPlaylistSync({
-      links: await loadLinks(),
+      links: await loadLinks(account),
       nuclear: nuclearLists.map((p) => ({
         id: p.id,
         modified: p.lastModifiedIso,
@@ -273,7 +285,7 @@ export const startPlaylistSync = async (
       return;
     }
 
-    let links = await loadLinks();
+    let links = await loadLinks(account);
     const drop = (l: PlaylistLink) => {
       links = links.filter((x) => x.nuclearId !== l.nuclearId);
     };
@@ -372,7 +384,7 @@ export const startPlaylistSync = async (
         );
       }
     }
-    await api.Settings.set(SETTINGS.PLAYLIST_LINKS, JSON.stringify(links));
+    await saveLinks(account, links);
     previousIds = new Set(
       (await api.Playlists.getIndex()).map((entry) => entry.id),
     );
