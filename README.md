@@ -50,3 +50,7 @@ scrobbling are in the same section. The syncs start as soon as the
 credentials are filled in, no need to re-enable the plugin.
 
 Icon: the [OpenSubsonic](https://github.com/opensubsonic/open-subsonic-api) logo, Apache-2.0.
+
+## License
+
+AGPL-3.0-only, see [LICENSE](LICENSE).

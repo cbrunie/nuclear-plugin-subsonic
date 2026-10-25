@@ -13,8 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Text files only, as the registry requires; tests stay out.
       - name: Create plugin.zip
-        run: zip -r plugin.zip src package.json README.md
+        run: zip -r plugin.zip src package.json README.md LICENSE -x 'src/*.test.ts'
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

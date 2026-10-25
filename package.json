@@ -3,17 +3,20 @@
   "version": "0.6.0",
   "description": "Stream your Subsonic-compatible server (Navidrome, Gonic, Airsonic…) in Nuclear",
   "author": "cbrunie",
+  "license": "AGPL-3.0-only",
   "main": "src/index.ts",
   "type": "module",
   "nuclear": {
     "displayName": "Subsonic",
     "category": "streaming",
     "categories": [
-      "metadata",
       "streaming",
+      "metadata",
       "playlists",
       "lyrics",
-      "scrobbling"
+      "scrobbling",
+      "dashboard",
+      "discovery"
     ],
     "permissions": [],
     "icon": {
