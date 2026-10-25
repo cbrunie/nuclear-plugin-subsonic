@@ -133,7 +133,7 @@ export const createMetadataProvider = (connect: Connect): MetadataProvider => ({
   },
 
   // Top songs and similar artists rely on the server's external agents
-  // (Last.fm…): empty when it has none.
+  // (Last.fm, etc.): empty when it has none.
   fetchArtistTopTracks: async (artistId: string): Promise<TrackRef[]> => {
     const client = await connect();
     const artist = await client.getArtist(artistId);

@@ -47,7 +47,7 @@ export const ConnectionTest: FC<CustomWidgetProps<NuclearPluginAPI>> = ({
   return (
     <div className="flex flex-col items-start gap-2">
       <Button variant="secondary" size="sm" onClick={test} disabled={testing}>
-        {testing ? 'Testing…' : 'Test connection'}
+        {testing ? 'Testing...' : 'Test connection'}
       </Button>
       {result?.ok === true &&
         result.lines.map((line) => <span key={line}>{line}</span>)}

@@ -148,7 +148,7 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     id: SETTINGS.SCROBBLE,
     title: 'Scrobble',
     description:
-      'Reports now playing and finished songs to the server: play counts, and whatever it forwards them to (Last.fm, ListenBrainz…).',
+      'Reports now playing and finished songs to the server: play counts, and whatever it forwards them to (Last.fm, ListenBrainz, etc.).',
     category: CATEGORY,
     kind: 'boolean',
     default: true,

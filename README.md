@@ -1,56 +1,36 @@
 # Subsonic for Nuclear
 
-Search and stream your own library from any Subsonic-compatible server
-(Navidrome, Gonic, Airsonic…) in [Nuclear](https://github.com/nukeop/nuclear).
+Plays your own music library in [Nuclear](https://github.com/nukeop/nuclear)
+from a Subsonic-compatible server. I use it with Navidrome; Gonic, Airsonic
+and the like should work too.
 
-- Search artists, albums and tracks
-- Artist pages: albums, biography, top songs and similar artists (the last
-  three when the server has an external agent such as Last.fm), album pages
-- Playback straight from the server, with an optional maximum bitrate and
-  format (transcoded by the server); tracks found by other metadata
-  providers are matched against your library too
-- Lyrics: synced, or word by word, when the server supports it, plain
-  otherwise
-- Dashboard: most played albums and their artists, recently added albums,
-  starred songs and your server playlists
-- Playlists synced both ways: your server playlists appear in Nuclear, and
-  Nuclear playlists holding songs from the server are kept on it, edits,
-  renames and deletions included. Songs from other sources stay in Nuclear
-  only. When both sides changed, Nuclear wins; a playlist is deleted on the
-  server only when you delete it in Nuclear while the plugin runs
-- Discovery: songs similar to the last one played, or to its artist when it
-  came from another source, from your library; random ones when the server
-  knows none
-- Favorites synced both ways with the server's starred items
-- Play queue saved on the server, to resume it from another client; an
-  empty queue is restored from it at startup
-- Scrobbling to the server: now playing, and a listen when a song plays to
-  the end (skipped songs are not counted); the server updates its play
-  counts and forwards them wherever it is set up to (Last.fm, ListenBrainz…)
-
-The password never leaves your machine in clear: every request uses
-Subsonic token authentication (`md5(password + salt)`, fresh salt each time).
-
-## OpenSubsonic
-
-Used when the server announces them, with a plain Subsonic fallback:
-
-| Extension | Used for | Without it |
-|---|---|---|
-| `songLyrics` (v1, v2) | synced and word-level lyrics | plain lyrics by artist and title |
-| `topSongsByArtistId` | top songs by artist id | top songs by artist name |
-| `formPost` | saving long play queues | a window of 200 songs around the current one |
+What it does: search, artist and album pages, streaming (with optional
+transcoding), lyrics, a dashboard with your most played and recently added
+albums, and discovery from similar songs in your library. Playlists,
+favorites and the play queue are kept in sync with the server, and plays are
+scrobbled to it.
 
 ## Setup
 
-Settings → Subsonic: server URL, username, password, then **Test
-connection**: it shows the server, its version and the OpenSubsonic
-extensions it supports, or what is wrong. Bitrate, format, the syncs and
-scrobbling are in the same section. The syncs start as soon as the
-credentials are filled in, no need to re-enable the plugin.
+Open Settings, Subsonic section: enter the server URL, your username and
+password, then hit "Test connection". Everything else (bitrate, format,
+syncs, scrobbling) is in the same section.
 
-Icon: the [OpenSubsonic](https://github.com/opensubsonic/open-subsonic-api) logo, Apache-2.0.
+The password is never sent as is: requests use Subsonic token auth.
+
+## Notes
+
+- Lyrics are synced when the server supports the OpenSubsonic `songLyrics`
+  extension, plain otherwise. Same idea for a couple of other extensions:
+  they are used when available, with a plain Subsonic fallback.
+- Playlist sync: songs from other sources (YouTube etc.) stay in the Nuclear
+  playlist but are not sent to the server. If a playlist changed on both
+  sides, the Nuclear version wins. Renaming a playlist on the server is not
+  reflected in Nuclear, the plugin API can't rename playlists.
+- Only songs that play to the end are scrobbled.
 
 ## License
 
-AGPL-3.0-only, see [LICENSE](LICENSE).
+AGPL-3.0-only, see [LICENSE](LICENSE). Icon: the
+[OpenSubsonic](https://github.com/opensubsonic/open-subsonic-api) logo
+(Apache-2.0).
