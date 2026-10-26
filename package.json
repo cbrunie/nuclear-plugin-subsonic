@@ -1,6 +1,6 @@
 {
   "name": "nuclear-plugin-subsonic",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Stream your Subsonic-compatible server (Navidrome, Gonic, Airsonic, etc.) in Nuclear",
   "author": "cbrunie",
   "license": "AGPL-3.0-only",

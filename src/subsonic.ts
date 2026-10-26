@@ -1,5 +1,7 @@
 import type { NuclearPluginAPI } from '@nuclearplayer/plugin-sdk';
 
+import { SETTINGS } from './config';
+import { accountKey, type Account } from './account';
 import { md5 } from './md5';
 
 const API_VERSION = '1.16.1';
@@ -113,14 +115,26 @@ export type AlbumListType = 'newest' | 'frequent' | 'recent' | 'random';
 export type StarTarget = 'id' | 'albumId' | 'artistId';
 
 // An answer from the server, as opposed to a network failure.
-class SubsonicError extends Error {}
+class SubsonicError extends Error {
+  constructor(
+    message: string,
+    readonly code?: number,
+  ) {
+    super(message);
+  }
+}
+
+// Subsonic error 70: the requested data was not found.
+const NOT_FOUND = 70;
 
 type Params = Record<string, string | number | string[] | undefined>;
 
 export type UrlBuilder = (endpoint: string, params?: Params) => string;
 
+// Token auth: the password itself is not sent, but any captured request
+// (u, t, s) can be replayed for any call until the password changes, and an
+// MD5 token is cheap to brute-force. Only HTTPS protects it.
 const authParams = (username: string, password: string) => {
-  // A fresh salt per request, so the token is never reused.
   const salt = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) =>
     b.toString(16).padStart(2, '0'),
   ).join('');
@@ -165,20 +179,29 @@ export const makeUrlBuilder =
 // failure is not cached, the next call asks again.
 const extensionsCache = new Map<string, Promise<Map<string, number[]>>>();
 
-export type SubsonicClient = Awaited<
-  ReturnType<ReturnType<typeof createClient>>
->;
+export type SubsonicClient = Awaited<ReturnType<typeof openClient>>;
 
-// Settings are read on every call, so a change applies without reloading.
+// Only the account saved by "Connect" is used, never the fields being typed:
+// nothing is sent to a half-typed host.
+export const readAccount = async (
+  api: NuclearPluginAPI,
+): Promise<Account | undefined> => {
+  const stored = await api.Settings.get<string>(SETTINGS.ACCOUNT);
+  return stored ? JSON.parse(stored) : undefined;
+};
+
 export const createClient = (api: NuclearPluginAPI) => async () => {
-  const [server, username, password] = await Promise.all([
-    api.Settings.get<string>('url'),
-    api.Settings.get<string>('username'),
-    api.Settings.get<string>('password'),
-  ]);
-  if (!server || !username || !password) {
-    throw new Error('Subsonic: set the server URL, username and password');
+  const account = await readAccount(api);
+  if (!account) {
+    throw new Error('Subsonic: not connected, use Connect in the settings');
   }
+  return openClient(api, account);
+};
+
+export const openClient = async (
+  api: NuclearPluginAPI,
+  { url: server, username, password }: Account,
+) => {
   const url = makeUrlBuilder(server, username, password);
 
   const parse = async (endpoint: string, response: Response) => {
@@ -193,6 +216,7 @@ export const createClient = (api: NuclearPluginAPI) => async () => {
     if (body.status !== 'ok') {
       throw new SubsonicError(
         `Subsonic ${endpoint}: ${body.error?.message ?? 'request failed'}`,
+        body.error?.code,
       );
     }
     return body;
@@ -214,7 +238,7 @@ export const createClient = (api: NuclearPluginAPI) => async () => {
       }),
     );
 
-  const cacheKey = `${server}|${username}`;
+  const cacheKey = accountKey({ url: server, username });
   if (!extensionsCache.has(cacheKey)) {
     extensionsCache.set(
       cacheKey,
@@ -287,6 +311,19 @@ export const createClient = (api: NuclearPluginAPI) => async () => {
       (await call('getPlaylists')).playlists?.playlist ?? [],
     getPlaylist: async (id: string) =>
       (await call('getPlaylist', { id })).playlist,
+    // False only when the server says it does not exist; any other failure
+    // throws, so it is never mistaken for a deletion.
+    playlistExists: async (id: string) => {
+      try {
+        await call('getPlaylist', { id });
+        return true;
+      } catch (error) {
+        if (error instanceof SubsonicError && error.code === NOT_FOUND) {
+          return false;
+        }
+        throw error;
+      }
+    },
     createPlaylist: async (name: string, songIds: string[]) =>
       (await send('createPlaylist', { name, songId: songIds })).playlist,
     // createPlaylist with a playlistId replaces the whole song list.

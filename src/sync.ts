@@ -17,6 +17,7 @@ import {
 import { albumRef, artistRef, isFromServer, playlist, track } from './mappers';
 import { planPlaylistSync, type PlaylistLink } from './playlistSync';
 import type { Connect } from './providers';
+import { sameUser } from './account';
 import type { StarTarget } from './subsonic';
 
 type Unsubscribe = () => void;
@@ -220,6 +221,10 @@ const serverSongIds = (playlist: Playlist) =>
     .filter((item) => isFromServer(item.track))
     .map((item) => item.track.source.id);
 
+// One playlist sync at a time, across restarts too: a pass from a stopped
+// sync still running next to the new one would create duplicates.
+let playlistSyncs: Promise<void> = Promise.resolve();
+
 // Server playlists appear in Nuclear; Nuclear playlists holding songs from
 // this server are kept on it. The rules are in playlistSync.ts.
 export const startPlaylistSync = async (
@@ -228,6 +233,8 @@ export const startPlaylistSync = async (
 ): Promise<Unsubscribe> => {
   const enabled = async () =>
     (await api.Settings.get<boolean>(SETTINGS.SYNC_PLAYLISTS)) !== false;
+  // Read synchronously by the index listener below.
+  let syncOn = await enabled();
   // Links belong to one account: switching server or user must not make
   // the other account's playlists look deleted.
   const allLinks = async (): Promise<Record<string, PlaylistLink[]>> => {
@@ -252,16 +259,21 @@ export const startPlaylistSync = async (
     (await api.Playlists.getIndex()).map((entry) => entry.id),
   );
 
+  let stopped = false;
+
   const sync = async () => {
+    if (stopped) {
+      return;
+    }
     if (!(await enabled())) {
+      // Deletions made while the sync is off are never sent later.
+      vanished.clear();
       return;
     }
     const client = await connect();
     const account = client.account;
-    const serverLists = (await client.getPlaylists()).filter(
-      // Other users' public playlists cannot be edited.
-      (p) => !p.owner || p.owner === client.username,
-    );
+    // All of them: one that is not ours must not look deleted.
+    const serverLists = await client.getPlaylists();
     const index = await api.Playlists.getIndex();
     const nuclearLists = (
       await Promise.all(index.map((e) => api.Playlists.getPlaylist(e.id)))
@@ -274,11 +286,18 @@ export const startPlaylistSync = async (
       links: await loadLinks(account),
       nuclear: nuclearLists.map((p) => ({
         id: p.id,
+        name: p.name,
         modified: p.lastModifiedIso,
         originServerId: originServerId(p),
         hasServerTracks: serverSongIds(p).length > 0,
       })),
-      server: serverLists.map((p) => ({ id: p.id, changed: p.changed })),
+      server: serverLists.map((p) => ({
+        id: p.id,
+        name: p.name,
+        changed: p.changed,
+        // Usernames are case-insensitive on Subsonic servers.
+        editable: !p.owner || sameUser(p.owner, client.username),
+      })),
       vanished: toDelete,
     });
     if (!actions.length) {
@@ -299,6 +318,23 @@ export const startPlaylistSync = async (
       });
     };
 
+    // The server's songs replace this server's songs in the Nuclear
+    // playlist; songs from other sources stay, after them.
+    const pull = async (nuclearId: string, serverId: string) => {
+      const local = nuclearById.get(nuclearId)!;
+      const remote = await client.getPlaylist(serverId);
+      const others = local.items.filter((i) => !isFromServer(i.track));
+      await api.Playlists.removeTracks(
+        local.id,
+        local.items.map((i) => i.id),
+      );
+      await api.Playlists.addTracks(local.id, [
+        ...(remote?.entry ?? []).map((s) => track(client.url, s)),
+        ...others.map((i) => i.track),
+      ]);
+      await keep(local.id, serverId);
+    };
+
     for (const action of actions) {
       try {
         switch (action.type) {
@@ -310,8 +346,11 @@ export const startPlaylistSync = async (
             drop(action.link);
             break;
           case 'deleteInNuclear':
-            await api.Playlists.deletePlaylist(action.link.nuclearId);
-            drop(action.link);
+            // Only once the server itself says this playlist is gone.
+            if (!(await client.playlistExists(action.link.serverId))) {
+              await api.Playlists.deletePlaylist(action.link.nuclearId);
+              drop(action.link);
+            }
             break;
           case 'push': {
             const local = nuclearById.get(action.link.nuclearId)!;
@@ -328,24 +367,11 @@ export const startPlaylistSync = async (
             await keep(action.link.nuclearId, action.link.serverId);
             break;
           }
-          case 'pull': {
-            // Songs from other sources stay, after the server's.
-            const local = nuclearById.get(action.link.nuclearId)!;
-            const remote = await client.getPlaylist(action.link.serverId);
-            const others = local.items.filter((i) => !isFromServer(i.track));
-            await api.Playlists.removeTracks(
-              local.id,
-              local.items.map((i) => i.id),
-            );
-            await api.Playlists.addTracks(local.id, [
-              ...(remote?.entry ?? []).map((s) => track(client.url, s)),
-              ...others.map((i) => i.track),
-            ]);
-            await keep(local.id, action.link.serverId);
+          case 'pull':
+            await pull(action.link.nuclearId, action.link.serverId);
             break;
-          }
           case 'link':
-            await keep(action.nuclearId, action.serverId);
+            await pull(action.nuclearId, action.serverId);
             break;
           case 'createOnServer': {
             const local = nuclearById.get(action.nuclearId)!;
@@ -357,7 +383,11 @@ export const startPlaylistSync = async (
             const serverId =
               created?.id ??
               (await client.getPlaylists())
-                .filter((p) => p.name === local.name)
+                .filter(
+                  (p) =>
+                    p.name === local.name &&
+                    (!p.owner || sameUser(p.owner, client.username)),
+                )
                 .sort((a, b) =>
                   (b.created ?? '').localeCompare(a.created ?? ''),
                 )[0]?.id;
@@ -390,10 +420,8 @@ export const startPlaylistSync = async (
     );
   };
 
-  // One sync at a time; a request during a sync runs once it ends.
-  let running: Promise<void> = Promise.resolve();
   const run = () => {
-    running = running
+    playlistSyncs = playlistSyncs
       .then(sync)
       .catch((error) =>
         api.Logger.warn(`Subsonic: playlist sync failed: ${String(error)}`),
@@ -414,21 +442,35 @@ export const startPlaylistSync = async (
     }
     lastSignature = current;
     const ids = new Set(index.map((entry) => entry.id));
-    for (const id of previousIds) {
-      if (!ids.has(id)) {
-        vanished.add(id);
+    if (syncOn) {
+      for (const id of previousIds) {
+        if (!ids.has(id)) {
+          vanished.add(id);
+        }
       }
     }
     previousIds = ids;
     clearTimeout(timer);
     timer = setTimeout(run, PLAYLIST_SYNC_DELAY_MS);
   });
+  const unsubscribeSetting = api.Settings.subscribe<boolean>(
+    SETTINGS.SYNC_PLAYLISTS,
+    (value) => {
+      syncOn = value !== false;
+      vanished.clear();
+      if (syncOn) {
+        run();
+      }
+    },
+  );
   const interval = setInterval(run, PLAYLIST_SYNC_INTERVAL_MS);
   run();
 
   return () => {
+    stopped = true;
     clearTimeout(timer);
     clearInterval(interval);
     unsubscribe();
+    unsubscribeSetting();
   };
 };

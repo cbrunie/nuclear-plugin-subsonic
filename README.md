@@ -13,10 +13,15 @@ scrobbled to it.
 ## Setup
 
 Open Settings, Subsonic section: enter the server URL, your username and
-password, then hit "Test connection". Everything else (bitrate, format,
-syncs, scrobbling) is in the same section.
+password, then hit "Connect". Nothing is sent to the server before that,
+and the plugin keeps using the last account that connected successfully.
+Everything else (bitrate, format, syncs, scrobbling) is in the same section.
 
-The password is never sent as is: requests use Subsonic token auth.
+About credentials: requests use Subsonic token auth, so the password itself
+is not sent, but that is weak protection. Anyone who captures a request URL
+(stream and cover art URLs included) can replay it for any API call until
+you change the password, and the MD5 token is cheap to brute-force. Use
+HTTPS.
 
 ## Notes
 
@@ -27,6 +32,10 @@ The password is never sent as is: requests use Subsonic token auth.
   playlist but are not sent to the server. If a playlist changed on both
   sides, the Nuclear version wins. Renaming a playlist on the server is not
   reflected in Nuclear, the plugin API can't rename playlists.
+- Deletions: a playlist you delete in Nuclear is deleted on the server only
+  if the sync is on at that moment. A playlist is removed from Nuclear only
+  once the server confirms it no longer exists. Other users' public
+  playlists are left alone.
 - Only songs that play to the end are scrobbled.
 
 ## License

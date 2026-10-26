@@ -36,6 +36,7 @@ export const SETTINGS = {
   SYNC_PLAYLISTS: 'syncPlaylists',
   PLAYLIST_LINKS: 'playlistLinks',
   CONNECTION_TEST: 'connectionTest',
+  ACCOUNT: 'account',
 } as const;
 
 const CATEGORY = 'Subsonic';
@@ -68,7 +69,8 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
   {
     id: SETTINGS.CONNECTION_TEST,
     title: 'Connection',
-    description: 'Checks the URL and credentials above.',
+    description:
+      'Checks the URL and credentials above, then uses them. Nothing is sent to the server before.',
     category: CATEGORY,
     kind: 'custom',
     widgetId: CONNECTION_TEST_WIDGET,
@@ -142,6 +144,14 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     category: CATEGORY,
     kind: 'string',
     default: '{}',
+    hidden: true,
+  },
+  {
+    // The account validated by Connect: what every request uses.
+    id: SETTINGS.ACCOUNT,
+    title: 'Account',
+    category: CATEGORY,
+    kind: 'string',
     hidden: true,
   },
   {

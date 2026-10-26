@@ -32,9 +32,6 @@ import {
   startScrobbling,
 } from './sync';
 
-// Settings typed in are saved as they change: wait for the typing to stop.
-const RESTART_DELAY_MS = 1500;
-const CREDENTIALS = [SETTINGS.URL, SETTINGS.USERNAME, SETTINGS.PASSWORD];
 const SYNCS = [
   startFavoritesSync,
   startPlayQueueSync,
@@ -64,8 +61,8 @@ const plugin: NuclearPlugin = {
     api.Providers.register(createLyricsProvider(connect));
 
     // In the background: an unreachable or unconfigured server must not
-    // keep the plugin from enabling. New credentials restart them, so they
-    // start once the server is set up, and follow a change of account.
+    // keep the plugin from enabling. Connecting an account restarts them;
+    // typing in the fields does not, nothing is sent before Connect.
     let generation = 0;
     const startSyncs = () => {
       stopSyncs();
@@ -88,14 +85,8 @@ const plugin: NuclearPlugin = {
     };
     startSyncs();
 
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const restart = () => {
-      clearTimeout(timer);
-      timer = setTimeout(startSyncs, RESTART_DELAY_MS);
-    };
     cleanups = [
-      ...CREDENTIALS.map((id) => api.Settings.subscribe(id, restart)),
-      () => clearTimeout(timer),
+      api.Settings.subscribe(SETTINGS.ACCOUNT, startSyncs),
       () => stopSyncs(),
     ];
   },
